@@ -22,6 +22,18 @@ class Player {
         dropped: dropped ?? this.dropped,
       );
 
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'dropped': dropped,
+      };
+
+  factory Player.fromJson(Map<String, dynamic> json) => Player(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        dropped: json['dropped'] as bool? ?? false,
+      );
+
   @override
   String toString() => 'Player($id, $name${dropped ? ', dropped' : ''})';
 }
@@ -46,6 +58,18 @@ class MatchResult {
   bool get player1Won => player1GameWins > player2GameWins;
   bool get player2Won => player2GameWins > player1GameWins;
   bool get isDraw => player1GameWins == player2GameWins;
+
+  Map<String, dynamic> toJson() => {
+        'player1GameWins': player1GameWins,
+        'player2GameWins': player2GameWins,
+        'gameDraws': gameDraws,
+      };
+
+  factory MatchResult.fromJson(Map<String, dynamic> json) => MatchResult(
+        player1GameWins: json['player1GameWins'] as int,
+        player2GameWins: json['player2GameWins'] as int,
+        gameDraws: json['gameDraws'] as int? ?? 0,
+      );
 
   @override
   String toString() => '$player1GameWins-$player2GameWins'
@@ -105,6 +129,23 @@ class Match {
     );
   }
 
+  Map<String, dynamic> toJson() => {
+        'player1Id': player1Id,
+        'player2Id': player2Id,
+        'isBye': isBye,
+        'result': result?.toJson(),
+      };
+
+  factory Match.fromJson(Map<String, dynamic> json) => Match._(
+        player1Id: json['player1Id'] as String,
+        player2Id: json['player2Id'] as String?,
+        isBye: json['isBye'] as bool,
+        result: json['result'] == null
+            ? null
+            : MatchResult.fromJson(
+                (json['result'] as Map).cast<String, dynamic>()),
+      );
+
   @override
   String toString() => isBye
       ? 'Bye($player1Id)'
@@ -120,6 +161,19 @@ class Round {
   const Round({required this.number, required this.matches});
 
   bool get isComplete => matches.every((m) => m.isReported);
+
+  Map<String, dynamic> toJson() => {
+        'number': number,
+        'matches': [for (final m in matches) m.toJson()],
+      };
+
+  factory Round.fromJson(Map<String, dynamic> json) => Round(
+        number: json['number'] as int,
+        matches: [
+          for (final m in (json['matches'] as List))
+            Match.fromJson((m as Map).cast<String, dynamic>()),
+        ],
+      );
 
   @override
   String toString() => 'Round $number (${matches.length} matches)';

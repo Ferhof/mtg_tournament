@@ -11,3 +11,5 @@ library;
 export 'src/models.dart';
 export 'src/standings.dart';
 export 'src/swiss_pairing.dart';
+export 'src/tournament.dart';
+export 'src/top_cut.dart';

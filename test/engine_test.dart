@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:mtg_tournament_engine/tournament_engine.dart';
@@ -145,6 +146,111 @@ void main() {
         expect(sameAs(m, '0', '1'), isFalse, reason: 'rematch 0v1');
         expect(sameAs(m, '2', '3'), isFalse, reason: 'rematch 2v3');
       }
+    });
+  });
+
+  group('Serialization', () {
+    test('Tournament round-trips through JSON', () {
+      final tournament = Tournament(
+        id: 't1',
+        config: const TournamentConfig(
+          name: 'Friday Night Magic',
+          swissRounds: 3,
+          bestOf: 3,
+          topCutSize: 4,
+        ),
+        players: const [
+          Player(id: 'A', name: 'Alice'),
+          Player(id: 'B', name: 'Bob', dropped: true),
+        ],
+        swissRounds: [
+          Round(number: 1, matches: [
+            Match.pairing('A', 'B').withResult(
+                const MatchResult(player1GameWins: 2, player2GameWins: 1)),
+            Match.bye('A'),
+          ]),
+        ],
+        status: TournamentStatus.swiss,
+      );
+
+      final restored = Tournament.fromJson(
+          (jsonDecode(jsonEncode(tournament.toJson())) as Map)
+              .cast<String, dynamic>());
+
+      expect(restored.id, 't1');
+      expect(restored.config.name, 'Friday Night Magic');
+      expect(restored.config.topCutSize, 4);
+      expect(restored.status, TournamentStatus.swiss);
+      expect(restored.players.length, 2);
+      expect(restored.players[1].dropped, isTrue);
+
+      final r1 = restored.swissRounds.single;
+      expect(r1.matches.first.result.toString(), '2-1');
+      expect(r1.matches.last.isBye, isTrue);
+      expect(r1.matches.last.result, isNull);
+    });
+
+    test('recommendedSwissRounds uses ceil(log2(n))', () {
+      expect(recommendedSwissRounds(8), 3);
+      expect(recommendedSwissRounds(9), 4);
+      expect(recommendedSwissRounds(16), 4);
+      expect(recommendedSwissRounds(1), 0);
+    });
+  });
+
+  group('Top cut', () {
+    List<Standing> standingsFor(int n) {
+      // Build a field where seed order equals player index (0 = top seed).
+      final players = [for (var i = 0; i < n; i++) Player(id: 'p$i', name: 'P$i')];
+      // One round where lower index always beats higher index, giving a clean
+      // descending standings order p0 > p1 > ... by match points.
+      final matches = <Match>[];
+      for (var i = 0; i + 1 < n; i += 2) {
+        matches.add(Match.pairing('p$i', 'p${i + 1}').withResult(
+            const MatchResult(player1GameWins: 2, player2GameWins: 0)));
+      }
+      final standings =
+          StandingsCalculator.compute(players, [Round(number: 1, matches: matches)]);
+      // Force deterministic rank == index for the test bracket.
+      return [
+        for (var i = 0; i < n; i++)
+          standings.firstWhere((s) => s.player.id == 'p$i').copyWith(rank: i + 1),
+      ];
+    }
+
+    test('top 8 seeds 1v8, 4v5, 2v7, 3v6', () {
+      final round = TopCut.seed(standingsFor(8), 8);
+      expect(round.matches.length, 4);
+      expect(round.matches[0].player1Id, 'p0'); // seed 1
+      expect(round.matches[0].player2Id, 'p7'); // seed 8
+      expect(round.matches[1].player1Id, 'p3'); // seed 4
+      expect(round.matches[1].player2Id, 'p4'); // seed 5
+      expect(round.matches[2].player1Id, 'p1'); // seed 2
+      expect(round.matches[2].player2Id, 'p6'); // seed 7
+      expect(round.matches[3].player1Id, 'p2'); // seed 3
+      expect(round.matches[3].player2Id, 'p5'); // seed 6
+    });
+
+    test('advances winners to a champion', () {
+      var round = TopCut.seed(standingsFor(8), 8);
+      // Top seed of each match (player1) always wins.
+      Round playOut(Round r) => Round(
+            number: r.number,
+            matches: [
+              for (final m in r.matches)
+                m.withResult(
+                    const MatchResult(player1GameWins: 2, player2GameWins: 0)),
+            ],
+          );
+
+      round = playOut(round); // quarterfinals
+      var semis = TopCut.nextRound(round);
+      expect(semis.matches.length, 2);
+      semis = playOut(semis);
+      var fin = TopCut.nextRound(semis);
+      expect(fin.matches.length, 1);
+      fin = playOut(fin);
+      expect(TopCut.championOf(fin), 'p0'); // overall top seed wins
     });
   });
 }
