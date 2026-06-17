@@ -1,0 +1,12 @@
+name: mtg_tournament_engine
+description: >-
+  Offline Swiss pairing and standings engine for Magic: The Gathering
+  tournaments. Pure Dart, no Flutter / no database dependencies.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+
+dev_dependencies:
+  test: ^1.24.0
