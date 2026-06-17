@@ -3,6 +3,8 @@ import 'package:mtg_tournament_engine/tournament_engine.dart';
 
 import '../state/tournament_controller.dart';
 import 'result_dialog.dart';
+import 'standings_list.dart';
+import 'tournament_menu.dart';
 
 /// Main screen during the Swiss phase: tabs for the current round and the
 /// live standings, plus an "advance" button.
@@ -25,6 +27,7 @@ class SwissScreen extends StatelessWidget {
           child: Scaffold(
             appBar: AppBar(
               title: Text(t.config.name),
+              actions: [TournamentMenu(controller: controller)],
               bottom: TabBar(
                 tabs: [
                   Tab(text: 'Round ${round?.number ?? '-'} / ${t.config.swissRounds}'),
@@ -181,28 +184,6 @@ class _StandingsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final standings = controller.standings();
-    return ListView.builder(
-      padding: const EdgeInsets.all(12),
-      itemCount: standings.length,
-      itemBuilder: (context, i) {
-        final s = standings[i];
-        return ListTile(
-          leading: CircleAvatar(child: Text('${s.rank}')),
-          title: Text(
-            s.player.name + (s.player.dropped ? ' (dropped)' : ''),
-          ),
-          subtitle: Text(
-            'OMW ${(s.oppMatchWinPct * 100).toStringAsFixed(1)}%  '
-            'GW ${(s.gameWinPct * 100).toStringAsFixed(1)}%  '
-            'OGW ${(s.oppGameWinPct * 100).toStringAsFixed(1)}%',
-          ),
-          trailing: Text(
-            '${s.matchPoints} pts',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-        );
-      },
-    );
+    return StandingsList(standings: controller.standings());
   }
 }

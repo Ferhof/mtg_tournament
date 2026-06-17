@@ -1,0 +1,9 @@
+# Static analysis for the pure-Dart engine package.
+#
+# The Flutter app under `app/` is a separate package with its own
+# `analysis_options.yaml`; excluding it here keeps `dart analyze` (run from the
+# repo root) focused on the engine and free of spurious `package:flutter`
+# resolution errors.
+analyzer:
+  exclude:
+    - app/**

@@ -81,19 +81,6 @@ class TournamentController extends ChangeNotifier {
     ));
   }
 
-  Future<void> renamePlayer(String playerId, String name) async {
-    final t = _tournament;
-    if (t == null || t.status != TournamentStatus.registering) return;
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return;
-    await _commit(t.copyWith(
-      players: [
-        for (final p in t.players)
-          if (p.id == playerId) p.copyWith(name: trimmed) else p,
-      ],
-    ));
-  }
-
   // --- Roster --------------------------------------------------------------
 
   Future<void> _addToRoster(String name) async {
@@ -175,9 +162,21 @@ class TournamentController extends ChangeNotifier {
     ));
   }
 
+  /// A manual first-round bye is only valid when the active field is odd
+  /// (Swiss awards exactly one bye) and no bye has been arranged yet.
+  bool get canAddManualBye {
+    final t = _tournament;
+    if (t == null || t.status != TournamentStatus.registering) return false;
+    final activeCount = t.players.where((p) => !p.dropped).length;
+    if (activeCount.isEven) return false;
+    if (t.manualFirstRound.any((m) => m.isBye)) return false;
+    return unpairedPlayers.isNotEmpty;
+  }
+
   Future<void> addManualBye(String playerId) async {
     final t = _tournament;
     if (t == null || t.status != TournamentStatus.registering) return;
+    if (!canAddManualBye) return;
     await _commit(t.copyWith(
       manualFirstRound: [...t.manualFirstRound, Match.bye(playerId)],
     ));
@@ -316,6 +315,54 @@ class TournamentController extends ChangeNotifier {
           topCutRounds: [...t.topCutRounds, TopCut.nextRound(last)],
         ));
       }
+    }
+  }
+
+  /// Whether the tournament can step back to the previous round/phase.
+  bool get canGoBack {
+    final t = _tournament;
+    return t != null && t.status != TournamentStatus.registering;
+  }
+
+  /// Reverts the tournament to the previous step, discarding the current
+  /// round's pairings/results. Walks back through phases:
+  /// finished → top cut/Swiss, top cut → earlier top-cut round or Swiss,
+  /// Swiss → earlier Swiss round or back to registration.
+  Future<void> goToPreviousStep() async {
+    final t = _tournament;
+    if (t == null) return;
+    switch (t.status) {
+      case TournamentStatus.registering:
+        return;
+      case TournamentStatus.swiss:
+        if (t.swissRounds.length > 1) {
+          await _commit(t.copyWith(
+            swissRounds: t.swissRounds.sublist(0, t.swissRounds.length - 1),
+          ));
+        } else {
+          await _commit(t.copyWith(
+            status: TournamentStatus.registering,
+            swissRounds: const [],
+          ));
+        }
+      case TournamentStatus.topCut:
+        if (t.topCutRounds.length > 1) {
+          await _commit(t.copyWith(
+            topCutRounds: t.topCutRounds.sublist(0, t.topCutRounds.length - 1),
+          ));
+        } else {
+          await _commit(t.copyWith(
+            status: TournamentStatus.swiss,
+            topCutRounds: const [],
+          ));
+        }
+      case TournamentStatus.finished:
+        // Re-open the last played phase so results can be corrected.
+        await _commit(t.copyWith(
+          status: t.topCutRounds.isEmpty
+              ? TournamentStatus.swiss
+              : TournamentStatus.topCut,
+        ));
     }
   }
 

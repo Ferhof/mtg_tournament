@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:mtg_tournament_engine/tournament_engine.dart';
 
 import '../state/tournament_controller.dart';
+import 'confirm_dialog.dart';
 import 'result_dialog.dart';
+import 'standings_list.dart';
+import 'tournament_menu.dart';
 
 /// Single-elimination bracket screen. Also shows the champion banner once the
 /// tournament is finished.
@@ -28,7 +31,10 @@ class TopCutScreen extends StatelessWidget {
         final championId = controller.championId;
 
         return Scaffold(
-          appBar: AppBar(title: Text('${t.config.name} — Top cut')),
+          appBar: AppBar(
+            title: Text('${t.config.name} — Top cut'),
+            actions: [TournamentMenu(controller: controller)],
+          ),
           body: ListView(
             padding: const EdgeInsets.all(12),
             children: [
@@ -51,13 +57,37 @@ class TopCutScreen extends StatelessWidget {
                     editable: !finished && round == t.topCutRounds.last,
                   ),
               ],
-              const SizedBox(height: 24),
-              if (finished)
+              if (finished) ...[
+                const Divider(height: 32),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'Final standings',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                StandingsList(
+                  standings: controller.standings(),
+                  padding: EdgeInsets.zero,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                ),
+                const SizedBox(height: 24),
                 FilledButton.icon(
-                  onPressed: controller.reset,
-                  icon: const Icon(Icons.refresh),
+                  onPressed: () async {
+                    final ok = await confirm(
+                      context,
+                      title: 'New tournament',
+                      message: 'Сбросить текущий турнир и начать новый?',
+                      confirmLabel: 'New tournament',
+                      destructive: true,
+                    );
+                    if (ok) await controller.reset();
+                  },
+                  icon: const Icon(Icons.add),
                   label: const Text('New tournament'),
                 ),
+              ],
             ],
           ),
           floatingActionButton: (!finished && controller.canAdvance)

@@ -226,6 +226,9 @@ class _FirstRoundSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final manual = controller.tournament?.manualFirstRound ?? const [];
     final unpaired = controller.unpairedPlayers;
+    final canAddBye = controller.canAddManualBye;
+    final activeCount =
+        controller.tournament?.players.where((p) => !p.dropped).length ?? 0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -263,12 +266,22 @@ class _FirstRoundSection extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             OutlinedButton.icon(
-              onPressed: unpaired.isNotEmpty ? onAddBye : null,
+              onPressed: canAddBye ? onAddBye : null,
               icon: const Icon(Icons.add),
               label: const Text('Add bye'),
             ),
           ],
         ),
+        if (!canAddBye && activeCount.isEven)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Бай можно выдать только при нечётном числе игроков.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+            ),
+          ),
       ],
     );
   }

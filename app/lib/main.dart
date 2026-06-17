@@ -3,6 +3,7 @@ import 'package:mtg_tournament_engine/tournament_engine.dart';
 
 import 'data/player_roster_repository.dart';
 import 'data/tournament_repository.dart';
+import 'screens/results_screen.dart';
 import 'screens/setup_screen.dart';
 import 'screens/swiss_screen.dart';
 import 'screens/top_cut_screen.dart';
@@ -51,8 +52,13 @@ class MtgTournamentApp extends StatelessWidget {
             case TournamentStatus.swiss:
               return SwissScreen(controller: controller);
             case TournamentStatus.topCut:
-            case TournamentStatus.finished:
               return TopCutScreen(controller: controller);
+            case TournamentStatus.finished:
+              // With a top cut, show the bracket + champion; without one, show
+              // the final standings directly.
+              return t.topCutRounds.isEmpty
+                  ? ResultsScreen(controller: controller)
+                  : TopCutScreen(controller: controller);
             case TournamentStatus.registering:
               return SetupScreen(controller: controller);
           }
