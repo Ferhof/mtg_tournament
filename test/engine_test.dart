@@ -147,6 +147,48 @@ void main() {
         expect(sameAs(m, '2', '3'), isFalse, reason: 'rematch 2v3');
       }
     });
+
+    test('honors fixed pairings and byes, auto-pairs the rest', () {
+      final players = [
+        for (var i = 0; i < 5; i++) Player(id: '$i', name: 'P$i'),
+      ];
+      final fixed = [
+        Match.pairing('0', '4'),
+        Match.bye('1'),
+      ];
+      final matches = SwissPairing.pairNextRound(
+        players: players,
+        previousRounds: const [],
+        fixedMatches: fixed,
+        random: Random(3),
+      );
+
+      bool sameAs(Match m, String a, String b) =>
+          (m.player1Id == a && m.player2Id == b) ||
+          (m.player1Id == b && m.player2Id == a);
+
+      // The fixed pairing and bye are present exactly as given.
+      expect(matches.any((m) => !m.isBye && sameAs(m, '0', '4')), isTrue);
+      expect(matches.any((m) => m.isBye && m.player1Id == '1'), isTrue);
+
+      // Fixed players never appear in the auto-paired remainder.
+      final auto = matches
+          .where((m) => !(m.isBye && m.player1Id == '1') && !sameAs(m, '0', '4'))
+          .toList();
+      for (final m in auto) {
+        expect(m.involves('0'), isFalse);
+        expect(m.involves('4'), isFalse);
+        expect(m.involves('1'), isFalse);
+      }
+
+      // The remaining players (2, 3) are paired together; everyone appears once.
+      final seen = <String>{};
+      for (final m in matches) {
+        expect(seen.add(m.player1Id), isTrue);
+        if (m.player2Id != null) expect(seen.add(m.player2Id!), isTrue);
+      }
+      expect(seen, {'0', '1', '2', '3', '4'});
+    });
   });
 
   group('Serialization', () {
@@ -188,6 +230,38 @@ void main() {
       expect(r1.matches.first.result.toString(), '2-1');
       expect(r1.matches.last.isBye, isTrue);
       expect(r1.matches.last.result, isNull);
+    });
+
+    test('manualFirstRound round-trips and defaults to empty', () {
+      final tournament = Tournament(
+        id: 't2',
+        config: const TournamentConfig(name: 'Prerelease', swissRounds: 3),
+        players: const [
+          Player(id: 'A', name: 'Alice'),
+          Player(id: 'B', name: 'Bob'),
+          Player(id: 'C', name: 'Cara'),
+        ],
+        manualFirstRound: [
+          Match.pairing('A', 'B'),
+          Match.bye('C'),
+        ],
+      );
+
+      final restored = Tournament.fromJson(
+          (jsonDecode(jsonEncode(tournament.toJson())) as Map)
+              .cast<String, dynamic>());
+      expect(restored.manualFirstRound.length, 2);
+      expect(restored.manualFirstRound.first.player2Id, 'B');
+      expect(restored.manualFirstRound.last.isBye, isTrue);
+
+      // Old saves without the key load as an empty list.
+      final legacy = Tournament.fromJson({
+        'id': 't3',
+        'config': const TournamentConfig(name: 'X', swissRounds: 3).toJson(),
+        'players': const [],
+        'status': 'registering',
+      });
+      expect(legacy.manualFirstRound, isEmpty);
     });
 
     test('recommendedSwissRounds uses ceil(log2(n))', () {

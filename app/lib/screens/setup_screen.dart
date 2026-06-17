@@ -34,13 +34,49 @@ class _SetupScreenState extends State<SetupScreen> {
     }
   }
 
-  Future<void> _addPlayer() async {
-    final name = _playerCtrl.text.trim();
-    if (name.isEmpty) return;
+  Future<void> _addPlayer([String? name]) async {
+    final value = (name ?? _playerCtrl.text).trim();
+    if (value.isEmpty) return;
     await _ensureTournament();
-    await c.addPlayer(name);
+    await c.addPlayer(value);
     _playerCtrl.clear();
   }
+
+  /// Roster names not already present in the current tournament.
+  List<String> _availableRosterNames(List<Player> players) {
+    final present = players.map((p) => p.name.toLowerCase()).toSet();
+    return c.rosterNames
+        .where((n) => !present.contains(n.toLowerCase()))
+        .toList();
+  }
+
+  Future<void> _manageRoster() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _ManageRosterDialog(controller: c),
+    );
+  }
+
+  Future<void> _addPairingDialog() async {
+    final pool = c.unpairedPlayers;
+    if (pool.length < 2) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _PairingDialog(controller: c, pool: pool),
+    );
+  }
+
+  Future<void> _addByeDialog() async {
+    final pool = c.unpairedPlayers;
+    if (pool.isEmpty) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _ByeDialog(controller: c, pool: pool),
+    );
+  }
+
+  String _playerName(String id) =>
+      c.tournament?.playerById(id)?.name ?? '???';
 
   @override
   Widget build(BuildContext context) {
@@ -84,9 +120,49 @@ class _SetupScreenState extends State<SetupScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  FilledButton(onPressed: _addPlayer, child: const Text('Add')),
+                  FilledButton(
+                      onPressed: () => _addPlayer(), child: const Text('Add')),
                 ],
               ),
+              if (_availableRosterNames(players).isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('From roster',
+                          style: Theme.of(context).textTheme.labelLarge),
+                    ),
+                    TextButton.icon(
+                      onPressed: _manageRoster,
+                      icon: const Icon(Icons.edit_outlined, size: 18),
+                      label: const Text('Manage'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    for (final name in _availableRosterNames(players))
+                      ActionChip(
+                        label: Text(name),
+                        avatar: const Icon(Icons.add, size: 18),
+                        onPressed: () => _addPlayer(name),
+                      ),
+                  ],
+                ),
+              ] else if (c.rosterNames.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _manageRoster,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Manage roster'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
               for (final p in players)
                 ListTile(
@@ -97,6 +173,15 @@ class _SetupScreenState extends State<SetupScreen> {
                     onPressed: () => c.removePlayer(p.id),
                   ),
                 ),
+              if (players.length >= 2) ...[
+                const Divider(height: 32),
+                _FirstRoundSection(
+                  controller: c,
+                  playerName: _playerName,
+                  onAddPairing: _addPairingDialog,
+                  onAddBye: _addByeDialog,
+                ),
+              ],
               const Divider(height: 32),
               _SettingsSection(controller: c, playerCount: activeCount),
               const SizedBox(height: 24),
@@ -118,6 +203,266 @@ class _SetupScreenState extends State<SetupScreen> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Optional manual pairings/byes for the first round. Anyone left unpaired is
+/// paired automatically when the tournament starts.
+class _FirstRoundSection extends StatelessWidget {
+  const _FirstRoundSection({
+    required this.controller,
+    required this.playerName,
+    required this.onAddPairing,
+    required this.onAddBye,
+  });
+
+  final TournamentController controller;
+  final String Function(String id) playerName;
+  final VoidCallback onAddPairing;
+  final VoidCallback onAddBye;
+
+  @override
+  Widget build(BuildContext context) {
+    final manual = controller.tournament?.manualFirstRound ?? const [];
+    final unpaired = controller.unpairedPlayers;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('First-round pairings (optional)',
+            style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Остальные игроки спарятся автоматически.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        for (var i = 0; i < manual.length; i++)
+          ListTile(
+            dense: true,
+            leading: Icon(manual[i].isBye
+                ? Icons.airline_seat_individual_suite_outlined
+                : Icons.sports_kabaddi_outlined),
+            title: Text(manual[i].isBye
+                ? 'Bye: ${playerName(manual[i].player1Id)}'
+                : '${playerName(manual[i].player1Id)} '
+                    'vs ${playerName(manual[i].player2Id!)}'),
+            trailing: IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () => controller.removeManualMatch(i),
+            ),
+          ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              onPressed: unpaired.length >= 2 ? onAddPairing : null,
+              icon: const Icon(Icons.add),
+              label: const Text('Add pairing'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: unpaired.isNotEmpty ? onAddBye : null,
+              icon: const Icon(Icons.add),
+              label: const Text('Add bye'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog to view, rename and delete roster entries.
+class _ManageRosterDialog extends StatelessWidget {
+  const _ManageRosterDialog({required this.controller});
+
+  final TournamentController controller;
+
+  Future<void> _rename(BuildContext context, String oldName) async {
+    final ctrl = TextEditingController(text: oldName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename player'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name'),
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (newName != null && newName.isNotEmpty) {
+      await controller.renameInRoster(oldName, newName);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Roster'),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) {
+            final names = controller.rosterNames;
+            if (names.isEmpty) {
+              return const Text('Roster is empty.');
+            }
+            return ListView(
+              shrinkWrap: true,
+              children: [
+                for (final name in names)
+                  ListTile(
+                    dense: true,
+                    title: Text(name),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => _rename(context, name),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => controller.removeFromRoster(name),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog to manually pair two of the unpaired players.
+class _PairingDialog extends StatefulWidget {
+  const _PairingDialog({required this.controller, required this.pool});
+
+  final TournamentController controller;
+  final List<Player> pool;
+
+  @override
+  State<_PairingDialog> createState() => _PairingDialogState();
+}
+
+class _PairingDialogState extends State<_PairingDialog> {
+  String? _first;
+  String? _second;
+
+  @override
+  Widget build(BuildContext context) {
+    final canSave = _first != null && _second != null && _first != _second;
+    return AlertDialog(
+      title: const Text('Add pairing'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<String>(
+            initialValue: _first,
+            decoration: const InputDecoration(labelText: 'Player 1'),
+            items: [
+              for (final p in widget.pool)
+                DropdownMenuItem(value: p.id, child: Text(p.name)),
+            ],
+            onChanged: (v) => setState(() => _first = v),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _second,
+            decoration: const InputDecoration(labelText: 'Player 2'),
+            items: [
+              for (final p in widget.pool)
+                DropdownMenuItem(value: p.id, child: Text(p.name)),
+            ],
+            onChanged: (v) => setState(() => _second = v),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: canSave
+              ? () {
+                  widget.controller.addManualPairing(_first!, _second!);
+                  Navigator.pop(context);
+                }
+              : null,
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Dialog to grant a manual first-round bye to one of the unpaired players.
+class _ByeDialog extends StatefulWidget {
+  const _ByeDialog({required this.controller, required this.pool});
+
+  final TournamentController controller;
+  final List<Player> pool;
+
+  @override
+  State<_ByeDialog> createState() => _ByeDialogState();
+}
+
+class _ByeDialogState extends State<_ByeDialog> {
+  String? _selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Add bye'),
+      content: DropdownButtonFormField<String>(
+        initialValue: _selected,
+        decoration: const InputDecoration(labelText: 'Player'),
+        items: [
+          for (final p in widget.pool)
+            DropdownMenuItem(value: p.id, child: Text(p.name)),
+        ],
+        onChanged: (v) => setState(() => _selected = v),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _selected != null
+              ? () {
+                  widget.controller.addManualBye(_selected!);
+                  Navigator.pop(context);
+                }
+              : null,
+          child: const Text('Add'),
+        ),
+      ],
     );
   }
 }

@@ -89,6 +89,11 @@ class Tournament {
 
   final TournamentStatus status;
 
+  /// Manually arranged pairings/byes for the first round, set during
+  /// registration. Consumed when the tournament starts (cleared afterwards);
+  /// players not listed here are paired automatically.
+  final List<Match> manualFirstRound;
+
   const Tournament({
     required this.id,
     required this.config,
@@ -96,6 +101,7 @@ class Tournament {
     this.swissRounds = const [],
     this.topCutRounds = const [],
     this.status = TournamentStatus.registering,
+    this.manualFirstRound = const [],
   });
 
   Tournament copyWith({
@@ -104,6 +110,7 @@ class Tournament {
     List<Round>? swissRounds,
     List<Round>? topCutRounds,
     TournamentStatus? status,
+    List<Match>? manualFirstRound,
   }) =>
       Tournament(
         id: id,
@@ -112,6 +119,7 @@ class Tournament {
         swissRounds: swissRounds ?? this.swissRounds,
         topCutRounds: topCutRounds ?? this.topCutRounds,
         status: status ?? this.status,
+        manualFirstRound: manualFirstRound ?? this.manualFirstRound,
       );
 
   Player? playerById(String id) {
@@ -128,6 +136,7 @@ class Tournament {
         'swissRounds': [for (final r in swissRounds) r.toJson()],
         'topCutRounds': [for (final r in topCutRounds) r.toJson()],
         'status': status.toJson(),
+        'manualFirstRound': [for (final m in manualFirstRound) m.toJson()],
       };
 
   factory Tournament.fromJson(Map<String, dynamic> json) => Tournament(
@@ -147,6 +156,10 @@ class Tournament {
             Round.fromJson((r as Map).cast<String, dynamic>()),
         ],
         status: TournamentStatus.fromJson(json['status'] as String),
+        manualFirstRound: [
+          for (final m in (json['manualFirstRound'] as List? ?? []))
+            Match.fromJson((m as Map).cast<String, dynamic>()),
+        ],
       );
 }
 

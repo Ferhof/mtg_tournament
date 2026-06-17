@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mtg_tournament_engine/tournament_engine.dart';
 
+import 'data/player_roster_repository.dart';
 import 'data/tournament_repository.dart';
 import 'screens/setup_screen.dart';
 import 'screens/swiss_screen.dart';
@@ -9,7 +10,8 @@ import 'state/tournament_controller.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final controller = TournamentController(TournamentRepository());
+  final controller =
+      TournamentController(TournamentRepository(), PlayerRosterRepository());
   controller.init();
   runApp(MtgTournamentApp(controller: controller));
 }

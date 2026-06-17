@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:mtg_tournament_engine/tournament_engine.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/player_roster_repository.dart';
 import '../data/tournament_repository.dart';
 
 /// Holds the current [Tournament] and exposes every mutation the UI needs.
@@ -10,20 +11,27 @@ import '../data/tournament_repository.dart';
 /// notifies listeners, and autosaves to disk. Standings are always recomputed
 /// from raw rounds via [StandingsCalculator] — nothing is cached.
 class TournamentController extends ChangeNotifier {
-  TournamentController(this._repo);
+  TournamentController(this._repo, this._rosterRepo);
 
   final TournamentRepository _repo;
+  final PlayerRosterRepository _rosterRepo;
   final _uuid = const Uuid();
 
   Tournament? _tournament;
   Tournament? get tournament => _tournament;
 
+  List<String> _rosterNames = const [];
+
+  /// Names of everyone ever added to a tournament, for quick re-adding.
+  List<String> get rosterNames => _rosterNames;
+
   bool _loading = true;
   bool get loading => _loading;
 
-  /// Loads any saved tournament on startup.
+  /// Loads any saved tournament and the player roster on startup.
   Future<void> init() async {
     _tournament = await _repo.load();
+    _rosterNames = await _rosterRepo.load();
     _loading = false;
     notifyListeners();
   }
@@ -59,6 +67,7 @@ class TournamentController extends ChangeNotifier {
     if (trimmed.isEmpty) return;
     final player = Player(id: _uuid.v4(), name: trimmed);
     await _commit(t.copyWith(players: [...t.players, player]));
+    await _addToRoster(trimmed);
   }
 
   Future<void> removePlayer(String playerId) async {
@@ -66,6 +75,9 @@ class TournamentController extends ChangeNotifier {
     if (t == null || t.status != TournamentStatus.registering) return;
     await _commit(t.copyWith(
       players: t.players.where((p) => p.id != playerId).toList(),
+      // Drop any manual pairing/bye that referenced the removed player.
+      manualFirstRound:
+          t.manualFirstRound.where((m) => !m.involves(playerId)).toList(),
     ));
   }
 
@@ -82,6 +94,46 @@ class TournamentController extends ChangeNotifier {
     ));
   }
 
+  // --- Roster --------------------------------------------------------------
+
+  Future<void> _addToRoster(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    if (_rosterNames.any((n) => n.toLowerCase() == trimmed.toLowerCase())) {
+      return;
+    }
+    _rosterNames = [..._rosterNames, trimmed]
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    notifyListeners();
+    await _rosterRepo.save(_rosterNames);
+  }
+
+  /// Removes [name] from the roster of known players (does not touch the current
+  /// tournament's players).
+  Future<void> removeFromRoster(String name) async {
+    _rosterNames =
+        _rosterNames.where((n) => n.toLowerCase() != name.toLowerCase()).toList();
+    notifyListeners();
+    await _rosterRepo.save(_rosterNames);
+  }
+
+  /// Corrects a misspelled name in the roster. Rejects empty names and names
+  /// that collide with a different existing entry.
+  Future<void> renameInRoster(String oldName, String newName) async {
+    final trimmed = newName.trim();
+    if (trimmed.isEmpty) return;
+    final collides = _rosterNames.any((n) =>
+        n.toLowerCase() == trimmed.toLowerCase() &&
+        n.toLowerCase() != oldName.toLowerCase());
+    if (collides) return;
+    _rosterNames = [
+      for (final n in _rosterNames)
+        if (n.toLowerCase() == oldName.toLowerCase()) trimmed else n,
+    ]..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    notifyListeners();
+    await _rosterRepo.save(_rosterNames);
+  }
+
   Future<void> updateConfig({int? swissRounds, int? bestOf, int? topCutSize, String? name}) async {
     final t = _tournament;
     if (t == null || t.status != TournamentStatus.registering) return;
@@ -92,6 +144,54 @@ class TournamentController extends ChangeNotifier {
         topCutSize: topCutSize,
         name: name,
       ),
+    ));
+  }
+
+  // --- Manual first-round pairings -----------------------------------------
+
+  /// Active players not yet placed in a manual first-round pairing or bye.
+  List<Player> get unpairedPlayers {
+    final t = _tournament;
+    if (t == null) return const [];
+    final taken = <String>{};
+    for (final m in t.manualFirstRound) {
+      taken.add(m.player1Id);
+      if (m.player2Id != null) taken.add(m.player2Id!);
+    }
+    return t.players
+        .where((p) => !p.dropped && !taken.contains(p.id))
+        .toList();
+  }
+
+  Future<void> addManualPairing(String player1Id, String player2Id) async {
+    final t = _tournament;
+    if (t == null || t.status != TournamentStatus.registering) return;
+    if (player1Id == player2Id) return;
+    await _commit(t.copyWith(
+      manualFirstRound: [
+        ...t.manualFirstRound,
+        Match.pairing(player1Id, player2Id),
+      ],
+    ));
+  }
+
+  Future<void> addManualBye(String playerId) async {
+    final t = _tournament;
+    if (t == null || t.status != TournamentStatus.registering) return;
+    await _commit(t.copyWith(
+      manualFirstRound: [...t.manualFirstRound, Match.bye(playerId)],
+    ));
+  }
+
+  Future<void> removeManualMatch(int index) async {
+    final t = _tournament;
+    if (t == null || t.status != TournamentStatus.registering) return;
+    if (index < 0 || index >= t.manualFirstRound.length) return;
+    await _commit(t.copyWith(
+      manualFirstRound: [
+        for (var i = 0; i < t.manualFirstRound.length; i++)
+          if (i != index) t.manualFirstRound[i],
+      ],
     ));
   }
 
@@ -109,11 +209,13 @@ class TournamentController extends ChangeNotifier {
     final firstRound = SwissPairing.pairNextRound(
       players: t.players,
       previousRounds: const [],
+      fixedMatches: t.manualFirstRound,
     );
     await _commit(t.copyWith(
       config: rounds,
       status: TournamentStatus.swiss,
       swissRounds: [Round(number: 1, matches: firstRound)],
+      manualFirstRound: const [],
     ));
   }
 

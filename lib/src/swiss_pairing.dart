@@ -17,13 +17,25 @@ import 'standings.dart';
 /// of WotC's exact within-score-bracket fold; that refinement can be layered on
 /// later without changing the data model.
 class SwissPairing {
+  /// [fixedMatches] are pre-determined pairings/byes (e.g. manually arranged for
+  /// the first round). Their players are excluded from automatic pairing and the
+  /// matches are returned verbatim alongside the auto-paired rest.
   static List<Match> pairNextRound({
     required List<Player> players,
     required List<Round> previousRounds,
+    List<Match> fixedMatches = const [],
     Random? random,
   }) {
     final rng = random ?? Random();
-    final active = players.where((p) => !p.dropped).toList();
+
+    final fixedIds = <String>{};
+    for (final m in fixedMatches) {
+      fixedIds.add(m.player1Id);
+      if (m.player2Id != null) fixedIds.add(m.player2Id!);
+    }
+
+    final active =
+        players.where((p) => !p.dropped && !fixedIds.contains(p.id)).toList();
 
     final played = _playedPairs(previousRounds);
     final byeCounts = _byeCounts(previousRounds);
@@ -40,7 +52,7 @@ class SwissPairing {
       ordered = active.map((p) => p.id).toList();
     }
 
-    final matches = <Match>[];
+    final matches = <Match>[...fixedMatches];
 
     if (ordered.length.isOdd) {
       final byeId =
