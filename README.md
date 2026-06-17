@@ -25,42 +25,6 @@
   сериализуемый объект.
 - `lib/src/top_cut.dart` — `TopCut`: сидинг и продвижение по сетке плей-офф.
 
-### Тесты
-
-```bash
-dart pub get
-dart test
-dart analyze
-```
-
-### Пример
-
-```dart
-import 'package:mtg_tournament_engine/tournament_engine.dart';
-
-final players = [
-  Player(id: 'p1', name: 'Alice'),
-  Player(id: 'p2', name: 'Bob'),
-  Player(id: 'p3', name: 'Carol'),
-];
-
-// Раунд 1
-var matches = SwissPairing.pairNextRound(players: players, previousRounds: []);
-
-// Репорт результата (иммутабельно; счёт — в партиях, не в матчах)
-matches[0] = matches[0].withResult(
-  const MatchResult(player1GameWins: 2, player2GameWins: 1),
-);
-
-final rounds = [Round(number: 1, matches: matches)];
-
-// Стендинги
-for (final s in StandingsCalculator.compute(players, rounds)) print(s);
-
-// Следующий раунд — уже по стендингам, без рематчей
-final next = SwissPairing.pairNextRound(players: players, previousRounds: rounds);
-```
-
 ## Приложение (`app/`)
 
 Требуется установленный Flutter SDK. Платформенные папки (`android/`, `ios/`,
@@ -98,9 +62,22 @@ flutter build apk --release                 # один «толстый» APK (�
 flutter build apk --release --split-per-abi # отдельные APK по архитектурам
 ```
 
-Готовые сборки лежат в **`app/dist/`**: для большинства современных телефонов —
-`app-arm64-v8a-release.apk`. Подпись — debug-ключом (годится для установки на свои
-устройства; для Google Play нужен release-keystore).
+### Готовые сборки (`app/dist/`)
+
+В каталог `app/dist/` сложены собранные APK для установки на Android без пересборки:
+
+| Файл | Размер | Для каких устройств |
+|------|--------|---------------------|
+| `app-arm64-v8a-release.apk` | ~16 МБ | **большинство современных телефонов** (бери этот) |
+| `app-armeabi-v7a-release.apk` | ~14 МБ | старые 32-битные устройства |
+| `app-x86_64-release.apk` | ~18 МБ | эмуляторы / x86-планшеты |
+| `app-release.apk` | ~47 МБ | «толстый» APK со всеми ABI сразу (если не уверен в архитектуре) |
+
+
+
+> Подпись — **debug-ключом**: годится для установки на свои устройства, но не для
+> Google Play (там нужен собственный release-keystore) и не для обновления поверх APK,
+> подписанного другим ключом.
 
 ## Сознательное упрощение
 
